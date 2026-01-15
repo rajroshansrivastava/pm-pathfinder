@@ -1,106 +1,81 @@
+import os
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from typing import Dict
-import os
-import openai
+from openai import OpenAI
 
 # -----------------------
 # App setup
 # -----------------------
-
 app = FastAPI(
     title="PM Path Finder API",
     version="0.1.0"
 )
 
 # -----------------------
-# Security
+# OpenAI Client (NEW SDK)
 # -----------------------
-
-VALID_API_KEYS = ["free-key-123"]
-
-# -----------------------
-# OpenAI setup
-# -----------------------
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY not set")
-
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 # -----------------------
-# Request model
+# Request Schema
 # -----------------------
-
 class AnalysisRequest(BaseModel):
     role: str
     signals: Dict[str, str]
     target_pm_role: str
 
 # -----------------------
-# Root endpoint
+# Root health check
 # -----------------------
-
 @app.get("/")
 def root():
-    return {
-        "message": "PM Path Finder API is running"
-    }
+    return {"status": "PM Path Finder API running"}
 
 # -----------------------
-# Analyze endpoint (AI POWERED)
+# Analyze Endpoint (AI)
 # -----------------------
-
 @app.post("/analyze")
 def analyze(
-    data: AnalysisRequest,
+    payload: AnalysisRequest,
     x_api_key: str = Header(...)
 ):
-    # --- API key validation ---
-    if x_api_key not in VALID_API_KEYS:
+    # API key check
+    if x_api_key != "free-key-123":
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    # --- Prepare prompt for OpenAI ---
+    # Build prompt
     prompt = f"""
-You are a senior product leader and career coach.
+You are a Product Management career advisor.
 
-Analyze the following candidate:
-
-Current Role: {data.role}
-Target PM Role: {data.target_pm_role}
+Current role: {payload.role}
+Target PM role: {payload.target_pm_role}
 
 Signals:
-{data.signals}
+{payload.signals}
 
-Your task:
-1. Assess PM readiness (score 0–10)
-2. Classify level (Beginner / Mid / Senior PM)
-3. Identify strengths
-4. Identify gaps
-5. Give next-step advice (concise, practical)
-
-Respond in JSON with keys:
-score, level, strengths, gaps, advice
+Analyze readiness and return:
+- score (0–10)
+- level
+- strengths
+- gaps
+- advice
 """
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert PM career advisor."},
+                {"role": "system", "content": "You are an expert PM coach."},
                 {"role": "user", "content": prompt}
-            ],
-            temperature=0.4
+            ]
         )
-
-        ai_output = response.choices[0].message.content
 
         return {
             "status": "success",
-            "input": data.dict(),
-            "ai_analysis": ai_output
+            "ai_reasoning": response.choices[0].message.content
         }
 
     except Exception as e:
