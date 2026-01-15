@@ -1,37 +1,12 @@
-import os
-from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+from scoring import evaluate_pm
+from ai_reasoning import generate_reasoning
 
-# -------------------------------------------------
-# App
-# -------------------------------------------------
+app = FastAPI(title="PM Path Finder API")
 
-app = FastAPI(
-    title="PM Path Finder API",
-    version="0.1.0"
-)
+API_KEYS = {"free-key-123"}
 
-# -------------------------------------------------
-# API KEY AUTH
-# -------------------------------------------------
-
-DEFAULT_API_KEY = os.environ.get("DEFAULT_API_KEY")
-
-if not DEFAULT_API_KEY:
-    raise RuntimeError("DEFAULT_API_KEY is not set in environment variables")
-
-
-def verify_api_key(
-    x_api_key: str = Header(..., alias="x-api-key")
-):
-    if x_api_key != DEFAULT_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return x_api_key
-
-
-# -------------------------------------------------
-# Request Model
-# -------------------------------------------------
 
 class AnalysisRequest(BaseModel):
     role: str
@@ -39,30 +14,37 @@ class AnalysisRequest(BaseModel):
     target_pm_role: str
 
 
-# -------------------------------------------------
-# Health Check
-# -------------------------------------------------
-
 @app.get("/")
 def root():
-    return {"status": "PM Path Finder API running"}
+    return {"message": "PM Path Finder API is running"}
 
-
-# -------------------------------------------------
-# Main API
-# -------------------------------------------------
 
 @app.post("/analyze")
 def analyze(
     payload: AnalysisRequest,
-    _: str = Depends(verify_api_key)
+    x_api_key: str = Header(...)
 ):
+    if x_api_key not in API_KEYS:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    analysis = evaluate_pm(
+        payload.signals,
+        payload.target_pm_role
+    )
+
+    reasoning = generate_reasoning(
+        role=payload.role,
+        target_pm_role=payload.target_pm_role,
+        score=analysis["score"],
+        level=analysis["level"],
+        strengths=analysis["strengths"],
+        gaps=analysis["gaps"]
+    )
+
     return {
         "status": "success",
-        "message": "API key accepted",
-        "data": {
-            "role": payload.role,
-            "signals": payload.signals,
-            "target_pm_role": payload.target_pm_role
-        }
+        "input_role": payload.role,
+        "target_pm_role": payload.target_pm_role,
+        "analysis": analysis,
+        "ai_reasoning": reasoning
     }
